@@ -1,0 +1,29 @@
+import EnhancedFileUploader from "@/components/enhanced-file-uploader"
+
+export default function Home() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-between p-6 md:p-24">
+      <div className="w-full max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-center mb-8">Merge2PDF</h1>
+        <p className="text-center mb-8 text-gray-600">
+          드래그 & 드랍으로 PDF 파일을 업로드하면 하나의 PDF로 합쳐드립니다.
+        </p>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
+          <p className="text-yellow-800 text-sm">
+            <strong>알림:</strong> 현재는 PDF 파일만 지원합니다. Word 파일 지원은 곧 추가될 예정입니다.
+          </p>
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
+          <h3 className="text-blue-800 font-medium mb-2">사용 방법</h3>
+          <ol className="list-decimal pl-5 text-blue-800 text-sm space-y-1">
+            <li>PDF 파일을 드래그하거나 클릭하여 업로드합니다.</li>
+            <li>필요한 경우 PDF 파일을 미리보기하고 순서를 변경합니다.</li>
+            <li>"파일 병합하기" 버튼을 클릭하여 PDF 파일을 병합합니다.</li>
+            <li>"병합된 PDF 다운로드" 버튼을 클릭하여 결과 파일을 다운로드합니다.</li>
+          </ol>
+        </div>
+        <EnhancedFileUploader />
+      </div>
+    </main>
+  )
+}
