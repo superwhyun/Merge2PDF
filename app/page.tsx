@@ -1,13 +1,25 @@
 import EnhancedFileUploader from "@/components/enhanced-file-uploader"
+import Image from "next/image"
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-6 md:p-24">
+    <main className="flex flex-col items-center justify-start p-6 md:p-10 flex-1">
       <div className="w-full max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold text-center mb-8">Merge2PDF</h1>
-        <p className="text-center mb-8 text-gray-600">
-          드래그 & 드랍으로 PDF 파일을 업로드하면 하나의 PDF로 합쳐드립니다.
-        </p>
+        <div className="flex flex-col items-center mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <Image 
+              src="/icon.svg" 
+              alt="Merge2PDF logo" 
+              width={44} 
+              height={44} 
+              className="rounded-lg"
+            />
+            <h1 className="text-3xl font-bold">Merge2PDF</h1>
+          </div>
+          <p className="text-center mb-8 text-gray-600">
+            드래그 & 드랍으로 PDF 파일을 업로드하면 하나의 PDF로 합쳐드립니다.
+          </p>
+        </div>
         <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
           <p className="text-yellow-800 text-sm">
             <strong>알림:</strong> 현재는 PDF 파일만 지원합니다. Word 파일 지원은 곧 추가될 예정입니다.

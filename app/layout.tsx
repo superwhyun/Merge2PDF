@@ -3,13 +3,21 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
+import { Footer } from "@/components/footer"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Merge2PDF",
-  description: "Word 파일이나 PDF 파일들을 여러개 업로드 하면, 이를 PDF로 변환하고 하나의 파일로 합칩니다.",
-    generator: 'v0.dev'
+  title: "Merge2PDF - PDF 병합 도구",
+  description: "여러 PDF 파일을 하나로 병합하는 무료 온라인 도구입니다.",
+  generator: 'v0.dev',
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/apple-icon.png',
+  },
 }
 
 export default function RootLayout({
@@ -22,8 +30,9 @@ export default function RootLayout({
       <head>
         {/* 기본 브라우저의 PDF 뷰어 사용 */}
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} flex flex-col min-h-screen`}>
         {children}
+        <Footer />
         <Toaster />
       </body>
     </html>
