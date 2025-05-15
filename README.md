@@ -1,6 +1,15 @@
 # Merge2PDF
 
 PDF 파일들을 간편하게 하나로 병합하는 웹 애플리케이션입니다.
+https://v0.dev, desktop commander mcp, claude 를 이용하였으며, 
+바이브 코딩만으로 개발하였습니다.
+~~심지어 한 시간도 걸리지 않았어요.~~
+~~개발자들 망했어요.~~
+
+## 데모
+
+https://merge2-pdf.vercel.app/
+
 
 ## 주요 기능
 
