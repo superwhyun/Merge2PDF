@@ -21,12 +21,15 @@ export default function FileUploader() {
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Filter for only PDF files
     const validFiles = acceptedFiles.filter((file) => {
-      const isValid = file.type === "application/pdf"
+      const isValid =
+        file.type === "application/pdf" ||
+        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        file.type === "application/msword"
 
       if (!isValid) {
         toast({
           title: "파일 형식 오류",
-          description: `${file.name}은(는) 지원되지 않는 파일 형식입니다. 현재는 PDF(.pdf) 파일만 지원합니다.`,
+          description: `${file.name}은(는) 지원되지 않는 파일 형식입니다. 현재는 PDF(.pdf) 및 Word(.doc, .docx) 파일만 지원합니다.`,
           variant: "destructive",
         })
       }
@@ -41,6 +44,8 @@ export default function FileUploader() {
     onDrop,
     accept: {
       "application/pdf": [".pdf"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/msword": [".doc"],
     },
   })
 
