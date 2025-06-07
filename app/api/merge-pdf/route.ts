@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { PDFDocument } from "pdf-lib"
 import { v4 as uuidv4 } from "uuid"
 import pdfStore from "@/lib/pdf-store"
-import { convertWordToPdf } from "@/lib/file-converter" // Adjusted path
+import { convertImageToPdf } from "@/lib/file-converter"
 import { Buffer } from "buffer"
 
 export async function POST(request: NextRequest) {
@@ -21,9 +21,20 @@ export async function POST(request: NextRequest) {
 
     for (const file of files) {
       console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size} bytes`)
+      if (!file.type) {
+        console.warn(`File type is empty for: ${file.name}. File object:`, file);
+      }
+      // 파일 타입이 비어 있으면 확장자로 추정
+      let fileType = file.type;
+      if (!fileType && file.name) {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (ext === "pdf") fileType = "application/pdf";
+        else if (ext === "jpg" || ext === "jpeg") fileType = "image/jpeg";
+        else if (ext === "png") fileType = "image/png";
+      }
       const fileBuffer = await file.arrayBuffer()
 
-      if (file.type === "application/pdf") {
+      if (fileType === "application/pdf") {
         try {
           console.log(`Loading PDF: ${file.name}`)
           const pdfDoc = await PDFDocument.load(new Uint8Array(fileBuffer))
@@ -33,24 +44,26 @@ export async function POST(request: NextRequest) {
           console.error(`Error loading PDF file ${file.name}: ${error}`)
           // Optionally skip this file or add to an error list
         }
-      } else if (file.type === "application/msword" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-        console.log(`Converting Word file: ${file.name}`)
+      } else if (fileType === "image/jpeg" || fileType === "image/png") {
+        console.log(`Converting image file to PDF: ${file.name}`);
         try {
-          const nodeBuffer = Buffer.from(fileBuffer)
-          const convertedPdfBuffer = await convertWordToPdf(nodeBuffer)
+          const nodeBuffer = Buffer.from(fileBuffer);
+          // 동적으로 import (serverless 호환)
+          const { convertImageToPdf } = await import('@/lib/file-converter');
+          const pdfBuffer = await convertImageToPdf(nodeBuffer, file.type);
 
-          if (convertedPdfBuffer) {
-            const pdfDoc = await PDFDocument.load(convertedPdfBuffer) // pdf-lib can handle Node.js Buffer directly
-            loadedPdfDocs.push(pdfDoc)
-            console.log(`Successfully converted and loaded Word file: ${file.name}, pages: ${pdfDoc.getPageCount()}`)
+          if (pdfBuffer) {
+            const pdfDoc = await PDFDocument.load(pdfBuffer);
+            loadedPdfDocs.push(pdfDoc);
+            console.log(`Successfully converted and loaded image file: ${file.name}, pages: ${pdfDoc.getPageCount()}`);
           } else {
-            console.error(`Failed to convert Word file ${file.name}: Conversion returned null`)
+            console.error(`Failed to convert image file ${file.name}: Conversion returned null`);
           }
         } catch (error) {
           if (error instanceof Error) {
-            console.error(`Error processing Word file ${file.name}: ${error.message}`);
+            console.error(`Error processing image file ${file.name}: ${error.message}`);
           } else {
-            console.error(`Error processing Word file ${file.name}: ${String(error)}`);
+            console.error(`Error processing image file ${file.name}: ${String(error)}`);
           }
         }
       } else {
@@ -59,7 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (loadedPdfDocs.length === 0) {
-      return NextResponse.json({ error: "처리할 PDF 또는 변환 가능한 Word 파일이 없습니다." }, { status: 400 })
+      return NextResponse.json({ error: "처리할 PDF 또는 이미지 파일이 없습니다." }, { status: 400 })
     }
 
     // PDF 병합

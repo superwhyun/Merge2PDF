@@ -31,13 +31,13 @@ export default function EnhancedFileUploader() {
     const validFiles = acceptedFiles.filter((file) => {
       const isValid =
         file.type === "application/pdf" ||
-        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-        file.type === "application/msword"
+        file.type === "image/jpeg" ||
+        file.type === "image/png"
 
       if (!isValid) {
         toast({
           title: "파일 형식 오류",
-          description: `${file.name}은(는) 지원되지 않는 파일 형식입니다. 현재는 PDF(.pdf) 및 Word(.doc, .docx) 파일만 지원합니다.`,
+          description: `${file.name}은(는) 지원되지 않는 파일 형식입니다. PDF(.pdf), 이미지(.jpg, .jpeg, .png) 파일만 지원합니다.`,
           variant: "destructive",
         })
       }
@@ -51,11 +51,7 @@ export default function EnhancedFileUploader() {
   // 드랍존 설정
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      "application/pdf": [".pdf"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-      "application/msword": [".doc"],
-    },
+    accept: ".pdf,.jpg,.jpeg,.png",
     noClick: false,
     noKeyboard: false,
     maxSize: 100 * 1024 * 1024, // 100MB 제한
