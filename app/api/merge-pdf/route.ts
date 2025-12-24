@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { PDFDocument } from "pdf-lib"
+import { PDFDocument, degrees } from "pdf-lib"
 import { v4 as uuidv4 } from "uuid"
 import pdfStore from "@/lib/pdf-store"
 import { convertImageToPdf } from "@/lib/file-converter"
@@ -89,7 +89,17 @@ export async function POST(request: NextRequest) {
           const copiedPages = await mergedPdf.copyPages(pdfDoc, pageIndices)
           console.log(`Copied ${copiedPages.length} pages from a document`)
 
-          copiedPages.forEach((page) => mergedPdf.addPage(page))
+          copiedPages.forEach((page) => {
+            // "Invalid rotation" 에러 방지를 위해 회전 값을 정규화
+            const rotation = page.getRotation();
+            // rotation이 객체이고 angle 속성이 있으면 그것을 사용, 아니면 rotation 자체(숫자일 경우) 또는 0 사용
+            const angle = typeof rotation === 'object' && rotation !== null && 'angle' in rotation
+              ? rotation.angle
+              : (typeof rotation === 'number' ? rotation : 0);
+
+            page.setRotation(degrees(angle));
+            mergedPdf.addPage(page);
+          })
           console.log(`Added all pages from a document to merged document`)
         } catch (error) {
           console.error(`Error processing a document for merging: ${error}`)
@@ -100,7 +110,7 @@ export async function POST(request: NextRequest) {
       if (mergedPdf.getPageCount() === 0) {
         return NextResponse.json({ error: "병합할 페이지가 없습니다. 모든 문서 처리 중 오류가 발생했을 수 있습니다." }, { status: 500 });
       }
-      
+
       console.log(`All documents processed, saving merged PDF`)
 
       // 병합된 PDF를 바이트 배열로 저장
@@ -117,7 +127,7 @@ export async function POST(request: NextRequest) {
 
       // 메모리 저장소에 저장 (Base64 인코딩)
       pdfStore.savePDF(fileId, mergedPdfBytes)
-      
+
       // 저장 후 상태 확인
       const afterIds = pdfStore.getAllPdfIds()
       console.log(`Store after saving - IDs: ${afterIds.join(', ')}`)
@@ -130,7 +140,7 @@ export async function POST(request: NextRequest) {
       })
     } catch (error) {
       console.error(`Error merging PDFs: ${error}`)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: "PDF 파일을 병합하는 중 오류가 발생했습니다.",
         details: error instanceof Error ? error.message : String(error)
       }, { status: 500 })
@@ -138,7 +148,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error processing files:", error)
     return NextResponse.json(
-      { 
+      {
         error: "파일 처리 중 오류가 발생했습니다.",
         details: error instanceof Error ? error.message : String(error)
       },
