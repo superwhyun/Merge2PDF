@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useDropzone } from "react-dropzone"
 import { Loader2, Upload, X, FileText, Download, AlertCircle, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,30 +8,35 @@ import { Progress } from "@/components/ui/progress"
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { isSupportedMergeFile, mergeFilesInBrowser } from "@/lib/client-pdf-merge"
 
 export default function FileUploader() {
   const [files, setFiles] = useState<File[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [mergedFileId, setMergedFileId] = useState<string | null>(null)
+  const [mergedPdfUrl, setMergedPdfUrl] = useState<string | null>(null)
+  const [mergedFileName, setMergedFileName] = useState("merged.pdf")
   const [mergedFileInfo, setMergedFileInfo] = useState<{ pageCount: number; fileSize: number } | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (mergedPdfUrl) {
+        URL.revokeObjectURL(mergedPdfUrl)
+      }
+    }
+  }, [mergedPdfUrl])
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Filter for only PDF files
     const validFiles = acceptedFiles.filter((file) => {
-      const isValid =
-        file.type === "application/pdf" ||
-        file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-        file.type === "application/msword" ||
-        file.type === "image/jpeg" ||
-        file.type === "image/png"
+      const isValid = isSupportedMergeFile(file)
 
       if (!isValid) {
         toast({
           title: "파일 형식 오류",
-          description: `${file.name}은(는) 지원되지 않는 파일 형식입니다. PDF(.pdf), Word(.doc, .docx), 이미지(.jpg, .jpeg, .png) 파일만 지원합니다.`,
+          description: `${file.name}은(는) 지원되지 않는 파일 형식입니다. PDF(.pdf), 이미지(.jpg, .jpeg, .png) 파일만 지원합니다.`,
           variant: "destructive",
         })
       }
@@ -44,7 +49,11 @@ export default function FileUploader() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: ".pdf,.doc,.docx,.jpg,.jpeg,.png",
+    accept: {
+      "application/pdf": [".pdf"],
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
+    },
   })
 
   const removeFile = (index: number) => {
@@ -63,53 +72,24 @@ export default function FileUploader() {
 
     setIsUploading(true)
     setUploadProgress(10) // Start with 10% to show activity
-    setMergedFileId(null)
+    setMergedPdfUrl((previousUrl) => {
+      if (previousUrl) URL.revokeObjectURL(previousUrl)
+      return null
+    })
     setMergedFileInfo(null)
     setDownloadError(null)
 
     try {
-      const formData = new FormData()
-      files.forEach((file) => {
-        formData.append("files", file)
+      const { blob, pageCount, fileSize } = await mergeFilesInBrowser(files, {
+        onProgress: setUploadProgress,
       })
+      const objectUrl = URL.createObjectURL(blob)
 
-      // Set up progress updates
-      const updateProgress = () => {
-        setUploadProgress((prev) => {
-          // Increment progress but cap at 90% until complete
-          const newProgress = prev + 5
-          return newProgress > 90 ? 90 : newProgress
-        })
-      }
-
-      // Update progress every 500ms to simulate activity
-      const progressInterval = setInterval(updateProgress, 500)
-
-      const response = await fetch("/api/merge-pdf", {
-        method: "POST",
-        body: formData,
-      })
-
-      clearInterval(progressInterval)
-
-      let data
-      try {
-        data = await response.json()
-      } catch (error) {
-        console.error("Failed to parse response as JSON:", error)
-        const text = await response.text()
-        console.error("Response text:", text)
-        throw new Error("서버 응답을 처리하는 중 오류가 발생했습니다.")
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || "PDF 병합 중 오류가 발생했습니다.")
-      }
-
-      setMergedFileId(data.fileId)
+      setMergedPdfUrl(objectUrl)
+      setMergedFileName("merged.pdf")
       setMergedFileInfo({
-        pageCount: data.pageCount || 0,
-        fileSize: data.fileSize || 0,
+        pageCount,
+        fileSize,
       })
       setUploadProgress(100)
 
@@ -131,46 +111,20 @@ export default function FileUploader() {
   }
 
   const handleDownload = async () => {
-    if (!mergedFileId) return
+    if (!mergedPdfUrl) return
 
     setIsDownloading(true)
     setDownloadError(null)
 
     try {
-      // API에서 Base64 인코딩된 PDF 데이터 가져오기
-      const response = await fetch(`/api/download-pdf/${mergedFileId}`)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(errorText || "PDF 다운로드 중 오류가 발생했습니다.")
-      }
-
-      const data = await response.json()
-
-      if (!data.success || !data.data) {
-        throw new Error(data.error || "PDF 데이터를 가져오는 중 오류가 발생했습니다.")
-      }
-
-      // Base64 디코딩 및 Blob 생성
-      const binaryString = window.atob(data.data)
-      const bytes = new Uint8Array(binaryString.length)
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i)
-      }
-      const blob = new Blob([bytes], { type: data.contentType || "application/pdf" })
-
-      // Blob URL 생성 및 다운로드
-      const blobUrl = URL.createObjectURL(blob)
       const link = document.createElement("a")
-      link.href = blobUrl
-      link.download = data.filename || "merged.pdf"
+      link.href = mergedPdfUrl
+      link.download = mergedFileName
       document.body.appendChild(link)
       link.click()
 
-      // 정리
       setTimeout(() => {
         document.body.removeChild(link)
-        URL.revokeObjectURL(blobUrl)
       }, 100)
 
       toast({
@@ -264,7 +218,7 @@ export default function FileUploader() {
               </Alert>
             )}
 
-            {mergedFileId && (
+            {mergedPdfUrl && (
               <Button variant="outline" className="w-full" onClick={handleDownload} disabled={isDownloading}>
                 {isDownloading ? (
                   <>

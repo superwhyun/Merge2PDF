@@ -1,9 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
 import pdfStore from "@/lib/pdf-store"
+import { Buffer } from "buffer"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id
+    const { id } = await params
     console.log(`Download request for PDF with ID: ${id}`)
     
     // 디버깅용: 현재 저장소에 있는 모든 PDF ID 출력
@@ -30,12 +31,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     console.log(`Found PDF with ID ${id}, returning Base64 data of length ${pdfBase64.length}`)
 
-    // Base64 인코딩된 PDF 데이터를 JSON으로 반환
-    return NextResponse.json({
-      success: true,
-      filename: "merged.pdf",
-      data: pdfBase64,
-      contentType: "application/pdf",
+    return new NextResponse(Buffer.from(pdfBase64, "base64"), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="merged.pdf"',
+        "Cache-Control": "no-store",
+      },
     })
   } catch (error) {
     console.error("Error downloading PDF:", error)

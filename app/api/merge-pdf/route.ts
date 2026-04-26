@@ -1,93 +1,139 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { PDFDocument, degrees } from "pdf-lib"
-import { v4 as uuidv4 } from "uuid"
-import pdfStore from "@/lib/pdf-store"
 import { convertImageToPdf } from "@/lib/file-converter"
 import { Buffer } from "buffer"
 
+const MAX_FILES = 50
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
+const MAX_TOTAL_SIZE_BYTES = 250 * 1024 * 1024
+
+type SupportedFileType = "application/pdf" | "image/jpeg" | "image/png"
+
+interface FileFailure {
+  name: string
+  reason: string
+}
+
+const getSupportedFileType = (file: File): SupportedFileType | null => {
+  const mimeType = file.type.toLowerCase()
+
+  if (mimeType === "application/pdf") return "application/pdf"
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") return "image/jpeg"
+  if (mimeType === "image/png") return "image/png"
+
+  const extension = file.name.split(".").pop()?.toLowerCase()
+
+  if (extension === "pdf") return "application/pdf"
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg"
+  if (extension === "png") return "image/png"
+
+  return null
+}
+
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
 export async function POST(request: NextRequest) {
   try {
-    // Parse form data
     const formData = await request.formData()
-    const files = formData.getAll("files") as File[]
+    const files = formData.getAll("files").filter((value): value is File => value instanceof File)
 
     if (files.length === 0) {
       return NextResponse.json({ error: "파일이 업로드되지 않았습니다." }, { status: 400 })
     }
 
+    if (files.length > MAX_FILES) {
+      return NextResponse.json({ error: `최대 ${MAX_FILES}개 파일까지 병합할 수 있습니다.` }, { status: 413 })
+    }
+
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+
+    if (totalSize > MAX_TOTAL_SIZE_BYTES) {
+      return NextResponse.json({ error: "업로드한 파일의 총 크기가 너무 큽니다. 250MB 이하로 줄여주세요." }, { status: 413 })
+    }
+
     console.log(`Received ${files.length} files for processing`)
 
-    const loadedPdfDocs: PDFDocument[] = []
+    const loadedPdfDocs: Array<{ name: string; pdfDoc: PDFDocument }> = []
+    const failures: FileFailure[] = []
 
     for (const file of files) {
       console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size} bytes`)
-      if (!file.type) {
-        console.warn(`File type is empty for: ${file.name}. File object:`, file);
+
+      if (file.size === 0) {
+        failures.push({ name: file.name, reason: "빈 파일입니다." })
+        continue
       }
-      // 파일 타입이 비어 있으면 확장자로 추정
-      let fileType = file.type;
-      if (!fileType && file.name) {
-        const ext = file.name.split('.').pop()?.toLowerCase();
-        if (ext === "pdf") fileType = "application/pdf";
-        else if (ext === "jpg" || ext === "jpeg") fileType = "image/jpeg";
-        else if (ext === "png") fileType = "image/png";
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        failures.push({ name: file.name, reason: "파일 크기가 100MB를 초과합니다." })
+        continue
       }
+
+      const fileType = getSupportedFileType(file)
+
+      if (!fileType) {
+        failures.push({ name: file.name, reason: "지원하지 않는 파일 형식입니다." })
+        continue
+      }
+
       const fileBuffer = await file.arrayBuffer()
 
       if (fileType === "application/pdf") {
         try {
           console.log(`Loading PDF: ${file.name}`)
-          const pdfDoc = await PDFDocument.load(new Uint8Array(fileBuffer))
-          loadedPdfDocs.push(pdfDoc)
+          const pdfDoc = await PDFDocument.load(new Uint8Array(fileBuffer), { ignoreEncryption: true })
+          loadedPdfDocs.push({ name: file.name, pdfDoc })
           console.log(`Successfully loaded PDF: ${file.name}, pages: ${pdfDoc.getPageCount()}`)
         } catch (error) {
-          console.error(`Error loading PDF file ${file.name}: ${error}`)
-          // Optionally skip this file or add to an error list
+          const reason = getErrorMessage(error)
+          console.error(`Error loading PDF file ${file.name}: ${reason}`)
+          failures.push({ name: file.name, reason: "PDF 파일을 열 수 없습니다. 암호화되었거나 손상된 파일일 수 있습니다." })
         }
       } else if (fileType === "image/jpeg" || fileType === "image/png") {
-        console.log(`Converting image file to PDF: ${file.name}`);
+        console.log(`Converting image file to PDF: ${file.name}`)
         try {
-          const nodeBuffer = Buffer.from(fileBuffer);
-          // 동적으로 import (serverless 호환)
-          const { convertImageToPdf } = await import('@/lib/file-converter');
-          const pdfBuffer = await convertImageToPdf(nodeBuffer, file.type);
+          const pdfBuffer = await convertImageToPdf(Buffer.from(fileBuffer), fileType)
 
           if (pdfBuffer) {
-            const pdfDoc = await PDFDocument.load(pdfBuffer);
-            loadedPdfDocs.push(pdfDoc);
-            console.log(`Successfully converted and loaded image file: ${file.name}, pages: ${pdfDoc.getPageCount()}`);
+            const pdfDoc = await PDFDocument.load(pdfBuffer)
+            loadedPdfDocs.push({ name: file.name, pdfDoc })
+            console.log(`Successfully converted and loaded image file: ${file.name}, pages: ${pdfDoc.getPageCount()}`)
           } else {
-            console.error(`Failed to convert image file ${file.name}: Conversion returned null`);
+            failures.push({ name: file.name, reason: "이미지를 PDF로 변환하지 못했습니다." })
           }
         } catch (error) {
-          if (error instanceof Error) {
-            console.error(`Error processing image file ${file.name}: ${error.message}`);
-          } else {
-            console.error(`Error processing image file ${file.name}: ${String(error)}`);
-          }
+          const reason = getErrorMessage(error)
+          console.error(`Error processing image file ${file.name}: ${reason}`)
+          failures.push({ name: file.name, reason: "이미지를 PDF로 변환하지 못했습니다." })
         }
-      } else {
-        console.log(`Skipping unsupported file: ${file.name}, type: ${file.type}`)
       }
     }
 
     if (loadedPdfDocs.length === 0) {
-      return NextResponse.json({ error: "처리할 PDF 또는 이미지 파일이 없습니다." }, { status: 400 })
+      return NextResponse.json({ error: "처리할 PDF 또는 이미지 파일이 없습니다.", failures }, { status: 400 })
     }
 
-    // PDF 병합
+    if (failures.length > 0) {
+      return NextResponse.json(
+        {
+          error: "일부 파일을 처리하지 못해 병합을 중단했습니다.",
+          failures,
+        },
+        { status: 422 },
+      )
+    }
+
     try {
       const mergedPdf = await PDFDocument.create()
       console.log(`Starting PDF merge process with ${loadedPdfDocs.length} documents`)
 
-      for (const pdfDoc of loadedPdfDocs) {
+      for (const { name, pdfDoc } of loadedPdfDocs) {
         try {
-          // Assuming pdfDoc is already a PDFDocument instance
           const pageIndices = pdfDoc.getPageIndices()
-          console.log(`Document has ${pageIndices.length} pages`)
+          console.log(`${name} has ${pageIndices.length} pages`)
 
           const copiedPages = await mergedPdf.copyPages(pdfDoc, pageIndices)
-          console.log(`Copied ${copiedPages.length} pages from a document`)
+          console.log(`Copied ${copiedPages.length} pages from ${name}`)
 
           copiedPages.forEach((page) => {
             // "Invalid rotation" 에러 방지를 위해 회전 값을 정규화
@@ -102,56 +148,45 @@ export async function POST(request: NextRequest) {
           })
           console.log(`Added all pages from a document to merged document`)
         } catch (error) {
-          console.error(`Error processing a document for merging: ${error}`)
-          // 오류가 발생해도 계속 진행
+          const reason = getErrorMessage(error)
+          console.error(`Error processing ${name} for merging: ${reason}`)
+          return NextResponse.json(
+            {
+              error: "PDF 파일을 병합하는 중 오류가 발생했습니다.",
+              failures: [{ name, reason: "이 파일의 페이지를 병합하지 못했습니다." }],
+            },
+            { status: 422 },
+          )
         }
       }
 
       if (mergedPdf.getPageCount() === 0) {
-        return NextResponse.json({ error: "병합할 페이지가 없습니다. 모든 문서 처리 중 오류가 발생했을 수 있습니다." }, { status: 500 });
+        return NextResponse.json({ error: "병합할 페이지가 없습니다." }, { status: 500 })
       }
 
       console.log(`All documents processed, saving merged PDF`)
 
-      // 병합된 PDF를 바이트 배열로 저장
       const mergedPdfBytes = await mergedPdf.save()
       console.log(`Merged PDF saved, size: ${mergedPdfBytes.length} bytes`)
 
-      // 고유 ID 생성
-      const fileId = uuidv4()
-      console.log(`Generated file ID: ${fileId}`)
-
-      // 저장소에 상태 확인
-      const beforeIds = pdfStore.getAllPdfIds()
-      console.log(`Store before saving - IDs: ${beforeIds.join(', ')}`)
-
-      // 메모리 저장소에 저장 (Base64 인코딩)
-      pdfStore.savePDF(fileId, mergedPdfBytes)
-
-      // 저장 후 상태 확인
-      const afterIds = pdfStore.getAllPdfIds()
-      console.log(`Store after saving - IDs: ${afterIds.join(', ')}`)
-
-      return NextResponse.json({
-        success: true,
-        fileId: fileId,
-        pageCount: mergedPdf.getPageCount(),
-        fileSize: mergedPdfBytes.length,
+      return new NextResponse(Buffer.from(mergedPdfBytes), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": 'attachment; filename="merged.pdf"',
+          "Content-Length": String(mergedPdfBytes.length),
+          "X-Page-Count": String(mergedPdf.getPageCount()),
+          "Cache-Control": "no-store",
+        },
       })
     } catch (error) {
       console.error(`Error merging PDFs: ${error}`)
-      return NextResponse.json({
-        error: "PDF 파일을 병합하는 중 오류가 발생했습니다.",
-        details: error instanceof Error ? error.message : String(error)
-      }, { status: 500 })
+      return NextResponse.json({ error: "PDF 파일을 병합하는 중 오류가 발생했습니다." }, { status: 500 })
     }
   } catch (error) {
     console.error("Error processing files:", error)
     return NextResponse.json(
-      {
-        error: "파일 처리 중 오류가 발생했습니다.",
-        details: error instanceof Error ? error.message : String(error)
-      },
+      { error: "파일 처리 중 오류가 발생했습니다." },
       { status: 500 },
     )
   }

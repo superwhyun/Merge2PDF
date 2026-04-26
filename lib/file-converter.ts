@@ -4,7 +4,7 @@ import { Buffer } from 'buffer';
 /**
  * Converts an image buffer (jpg/png) to a single-page PDF buffer.
  */
-export async function convertImageToPdf(imageBuffer: Buffer, mimeType: string): Promise<Buffer | null> {
+export async function convertImageToPdf(imageBuffer: Buffer, mimeType: string): Promise<Buffer> {
   try {
     const pdfDoc = await PDFDocument.create();
 
@@ -14,8 +14,7 @@ export async function convertImageToPdf(imageBuffer: Buffer, mimeType: string): 
     } else if (mimeType === "image/png") {
       image = await pdfDoc.embedPng(imageBuffer);
     } else {
-      console.error("Unsupported image type:", mimeType);
-      return null;
+      throw new Error(`Unsupported image type: ${mimeType}`);
     }
 
     const A4_WIDTH = 595;
@@ -45,6 +44,6 @@ export async function convertImageToPdf(imageBuffer: Buffer, mimeType: string): 
     return Buffer.from(pdfBytes);
   } catch (error) {
     console.error('Error during image to PDF conversion:', error);
-    return null;
+    throw error;
   }
 }
